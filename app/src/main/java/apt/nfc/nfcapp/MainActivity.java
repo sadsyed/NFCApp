@@ -24,7 +24,7 @@ import android.widget.Toast;
 import java.nio.charset.Charset;
 
 
-public class MainActivity extends Activity implements View.OnClickListener {
+public class MainActivity extends Activity {
 
     public static final String TAG = "NFCDemo";
 
@@ -57,24 +57,34 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
 
         writeTagButton = (Button) findViewById(R.id.writeTagButton);
-        writeTagButton.setOnClickListener(this);
+        writeTagButton.setOnClickListener(writeTagListener);
 
         readTagButton = (Button) findViewById(R.id.readTagButton);
         readTagButton.setOnClickListener(readTagListener);
-        
-        //handleNfcIntent(getIntent());
     }
 
-    public void onClick(View v) {
+    /*public void onClick(View v) {
         displayToastMessage("Tap and hold the tag against the back to the phone to write.");
         beginWrite();
-    }
+    }*/
+
+    private View.OnClickListener writeTagListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            try {
+                displayToastMessage("Tap and hold the tag against the back of the phone to write.");
+                beginWrite();
+            } catch (Exception e) {
+
+            }
+        }
+    };
 
     private View.OnClickListener readTagListener = new View.OnClickListener() {
         @Override
         public void onClick(View v) {
             try {
-                displayToastMessage("Tap and hold the tag against the back to the phone to read.");
+                displayToastMessage("Tap and hold the tag against the back of the phone to read.");
                 beginRead();
             } catch (Exception e) {
 
@@ -84,10 +94,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private void beginWrite() {
         writeMode =true;
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
-        IntentFilter tagDetected = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
-        IntentFilter[] filters = new IntentFilter[] { tagDetected };
-        nfcAdapter.enableForegroundDispatch(this, pendingIntent, filters, null);
+        enableForegroundMode();
     }
 
     private void beginRead() {
@@ -100,55 +107,32 @@ public class MainActivity extends Activity implements View.OnClickListener {
             writeMode = false;
             Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
             writeTag(tag);
-        } else {
+        } else { //read a tag
             setIntent(intent);
-            resolveIntent(intent);
-
-            /*String stringOut = "";
-
-            if (NfcAdapter.ACTION_TAG_DISCOVERED.equals(intent.getAction())) {
-                EditText tagDataEditText = (EditText) findViewById(R.id.tagDataEditText);
-
-                Parcelable[] messages = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
-
-                if (messages != null) {
-                    for (int i=0; i<messages.length; i++) {
-                        NdefMessage message = (NdefMessage) messages[i];
-                        NdefRecord[] records = message.getRecords();
-
-                        for (int j=0; j<records.length; j++) {
-                            NdefRecord record = records[j];
-                            stringOut += "TNF: " + record.getTnf() + "\n";
-                            stringOut += "MIME TYPE: " + new String(record.getType()) + "\n";
-                            stringOut += "Payload: " + new String(record.getPayload()) + "\n\n";
-                            tagDataEditText.setText(stringOut);
-                        }
-                    }
-                }
-            }*/
+            readTag(intent);
         }
     }
 
-    private void resolveIntent(Intent intent) {
+    private void readTag(Intent intent) {
         String action = intent.getAction();
         if (NfcAdapter.ACTION_TAG_DISCOVERED.equals(action)
                 || NfcAdapter.ACTION_TECH_DISCOVERED.equals(action)
                 || NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) {
-            Parcelable[] rawMsgs = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
+            Parcelable[] parcelables = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
 
-            NdefMessage[] msgs =null;
-            if (rawMsgs != null) {
-                msgs = new NdefMessage[rawMsgs.length];
-                for (int i=0; i<rawMsgs.length; i++) {
-                    msgs[i] = (NdefMessage) rawMsgs[i];
+            NdefMessage[] ndefMessages =null;
+            if (parcelables != null) {
+                ndefMessages = new NdefMessage[parcelables.length];
+                for (int i=0; i<parcelables.length; i++) {
+                    ndefMessages[i] = (NdefMessage) parcelables[i];
                 }
             }
-            if (msgs == null || msgs.length == 0) {
+            if (ndefMessages == null || ndefMessages.length == 0) {
                 return;
             }
 
-            String tagId = new String(msgs[0].getRecords()[0].getType());
-            String body = new String(msgs[0].getRecords()[0].getPayload());
+            String tagId = new String(ndefMessages[0].getRecords()[0].getType());
+            String body = new String(ndefMessages[0].getRecords()[0].getPayload());
 
             StringBuilder tagDataBuilder = new StringBuilder();
             tagDataBuilder.append("Tag Data: ").append(body);
@@ -211,9 +195,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
         return false;
     }
 
-    private void handleNfcIntent(Intent intent) {
-    }
-
     private void displayToastMessage(String message) {
         Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
     }
@@ -235,10 +216,11 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private void enableForegroundMode() {
         Log.d(TAG, "enableForegroundMode...");
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, new Intent(this, this.getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
         IntentFilter tagDetected = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
-        IntentFilter[] writeTagFilters = new IntentFilter[] { tagDetected };
-        nfcAdapter.enableForegroundDispatch(this, pendingIntent, writeTagFilters, null);
+        IntentFilter[] filters = new IntentFilter[] { tagDetected };
+        nfcAdapter.enableForegroundDispatch(this, pendingIntent, filters, null);
     }
 
     private void disableForegroundMode() {
