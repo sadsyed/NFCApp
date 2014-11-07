@@ -2,7 +2,6 @@ package apt.nfc.nfcapp;
 
 import android.app.Activity;
 import android.app.PendingIntent;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.nfc.NdefMessage;
@@ -12,6 +11,8 @@ import android.nfc.Tag;
 import android.nfc.tech.Ndef;
 import android.nfc.tech.NdefFormatable;
 import android.os.Bundle;
+import android.os.Parcelable;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -19,8 +20,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import org.w3c.dom.Text;
 
 import java.nio.charset.Charset;
 
@@ -35,7 +34,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
     private Button writeTagButton;
     private Button readTagButton;
 
-    private boolean mInWriteMode;
+    private boolean writeMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +58,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
         writeTagButton = (Button) findViewById(R.id.writeTagButton);
         writeTagButton.setOnClickListener(this);
+
+        readTagButton = (Button) findViewById(R.id.readTagButton);
+        readTagButton.setOnClickListener(readTagListener);
         
         //handleNfcIntent(getIntent());
     }
@@ -68,20 +70,91 @@ public class MainActivity extends Activity implements View.OnClickListener {
         beginWrite();
     }
 
+    private View.OnClickListener readTagListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            try {
+                displayToastMessage("Tap and hold the tag against the back to the phone to read.");
+                beginRead();
+            } catch (Exception e) {
+
+            }
+        }
+    };
+
     private void beginWrite() {
-        mInWriteMode =true;
+        writeMode =true;
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
         IntentFilter tagDetected = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
         IntentFilter[] filters = new IntentFilter[] { tagDetected };
         nfcAdapter.enableForegroundDispatch(this, pendingIntent, filters, null);
     }
 
+    private void beginRead() {
+        enableForegroundMode();
+    }
+
     @Override
     public void onNewIntent(Intent intent) {
-        if(mInWriteMode) {
-            mInWriteMode = false;
+        if(writeMode) {
+            writeMode = false;
             Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
             writeTag(tag);
+        } else {
+            setIntent(intent);
+            resolveIntent(intent);
+
+            /*String stringOut = "";
+
+            if (NfcAdapter.ACTION_TAG_DISCOVERED.equals(intent.getAction())) {
+                EditText tagDataEditText = (EditText) findViewById(R.id.tagDataEditText);
+
+                Parcelable[] messages = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
+
+                if (messages != null) {
+                    for (int i=0; i<messages.length; i++) {
+                        NdefMessage message = (NdefMessage) messages[i];
+                        NdefRecord[] records = message.getRecords();
+
+                        for (int j=0; j<records.length; j++) {
+                            NdefRecord record = records[j];
+                            stringOut += "TNF: " + record.getTnf() + "\n";
+                            stringOut += "MIME TYPE: " + new String(record.getType()) + "\n";
+                            stringOut += "Payload: " + new String(record.getPayload()) + "\n\n";
+                            tagDataEditText.setText(stringOut);
+                        }
+                    }
+                }
+            }*/
+        }
+    }
+
+    private void resolveIntent(Intent intent) {
+        String action = intent.getAction();
+        if (NfcAdapter.ACTION_TAG_DISCOVERED.equals(action)
+                || NfcAdapter.ACTION_TECH_DISCOVERED.equals(action)
+                || NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) {
+            Parcelable[] rawMsgs = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
+
+            NdefMessage[] msgs =null;
+            if (rawMsgs != null) {
+                msgs = new NdefMessage[rawMsgs.length];
+                for (int i=0; i<rawMsgs.length; i++) {
+                    msgs[i] = (NdefMessage) rawMsgs[i];
+                }
+            }
+            if (msgs == null || msgs.length == 0) {
+                return;
+            }
+
+            String tagId = new String(msgs[0].getRecords()[0].getType());
+            String body = new String(msgs[0].getRecords()[0].getPayload());
+
+            StringBuilder tagDataBuilder = new StringBuilder();
+            tagDataBuilder.append("Tag Data: ").append(body);
+
+            EditText tagDataEditText = (EditText) findViewById(R.id.tagDataEditText);
+            tagDataEditText.setText(tagDataBuilder.toString());
         }
     }
 
@@ -93,8 +166,8 @@ public class MainActivity extends Activity implements View.OnClickListener {
         byte[] payload = tagData.getBytes();
         byte[] mimeBytes = "text/plain".getBytes(Charset.forName("US-ASCII"));
 
-        NdefRecord cardRecord = new NdefRecord(NdefRecord.TNF_MIME_MEDIA, mimeBytes, new byte[0], payload);
-        NdefMessage message = new NdefMessage(new NdefRecord[] { cardRecord });
+        NdefRecord ndefRecord = new NdefRecord(NdefRecord.TNF_MIME_MEDIA, mimeBytes, new byte[0], payload);
+        NdefMessage ndefMessage = new NdefMessage(new NdefRecord[] { ndefRecord });
 
         try {
             Ndef ndef = Ndef.get(tag);
@@ -106,29 +179,29 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     return false;
                 }
 
-                int size = message.toByteArray().length;
+                int size = ndefMessage.toByteArray().length;
                 if (ndef.getMaxSize() < size ) {
                     displayToastMessage("There is not enough space to write.");
                     return false;
                 }
 
-                ndef.writeNdefMessage(message);
+                ndef.writeNdefMessage(ndefMessage);
                 displayToastMessage("Write successful.");
                 return true;
             } else {
-                NdefFormatable format = NdefFormatable.get(tag);
-                if (format != null) {
+                NdefFormatable ndefFormatable = NdefFormatable.get(tag);
+                if (ndefFormatable != null) {
                     try {
-                        format.connect();
-                        format.format(message);
+                        ndefFormatable.connect();
+                        ndefFormatable.format(ndefMessage);
                         displayToastMessage("Write successful\nLaunch a scanning app or scan and choose to read.");
                         return true;
                     } catch (Exception e){
-                        displayToastMessage("Unable to format tag to NDEF");
+                        displayToastMessage("Unable to ndefFormatable tag to NDEF");
                         return false;
                     }
                 } else {
-                    displayToastMessage("Tag doesn't appear to support NDEF format.");
+                    displayToastMessage("Tag doesn't appear to support NDEF ndefFormatable.");
                     return false;
                 }
             }
@@ -147,8 +220,30 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     @Override
     protected void onPause() {
+        Log.d(TAG, "onPause.....");
         super.onPause();
         stopWrite();
+        disableForegroundMode();
+    }
+
+    @Override
+    protected void onResume() {
+        Log.d(TAG, "onResume.... ");
+        super.onResume();
+        enableForegroundMode();
+    }
+
+    private void enableForegroundMode() {
+        Log.d(TAG, "enableForegroundMode...");
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, new Intent(this, this.getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
+        IntentFilter tagDetected = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
+        IntentFilter[] writeTagFilters = new IntentFilter[] { tagDetected };
+        nfcAdapter.enableForegroundDispatch(this, pendingIntent, writeTagFilters, null);
+    }
+
+    private void disableForegroundMode() {
+        Log.d(TAG, "disableForegroundMode.....");
+        nfcAdapter.disableForegroundDispatch(this);
     }
 
     private void stopWrite() {
